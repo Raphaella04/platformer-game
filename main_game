@@ -1,0 +1,689 @@
+import pygame, os
+import random
+import engine
+from spritesheet_functions import SpriteSheet
+from pygame.image import load
+
+# Colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+FOREST = (0,100,0)
+YELLOW = (255,255,0)
+
+# Screen dimensions
+SCREEN_WIDTH = 800
+SCREEN_HEIGHT = 640
+
+BG = pygame.image.load("set/Main_bg.png")
+
+def get_font1(size):
+    return pygame.font.Font("buttons/Alagard.ttf", size)
+
+class Player(pygame.sprite.Sprite):
+ 
+    # -- Methods
+    def __init__(self):
+ 
+        # Call the parent's constructor
+        super().__init__()
+ 
+        # Create an image of the block, and fill it with a color.
+        # This could also be an image loaded from the disk.
+        width = 40
+        height = 60
+        self.image = pygame.Surface([width, height])
+        
+ 
+        # Set a referance to the image rect.
+        self.rect = self.image.get_rect()
+ 
+        # Set speed vector of player
+        self.change_x = 0
+        self.change_y = 0
+
+        # This holds all the images for the animated walk left/right
+        # of our player
+        self.walking_frames_l = []
+        self.walking_frames_r = []
+
+        # What direction is the player facing?
+        self.direction = "R"
+ 
+         # List of sprites we can bump against
+        self.level = None
+        
+        sprite_sheet = SpriteSheet("player0_.png")
+        # Load all the right facing images into a list
+        image = sprite_sheet.get_image(0, 0, 66, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(66, 0, 66, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(132, 0, 66, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(0, 0, 66, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(66, 0, 66, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(132, 0, 66, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(0, 0, 66, 63)
+        self.walking_frames_r.append(image)
+ 
+        # Load all the right facing images, then flip them
+        # to face left.
+        image = sprite_sheet.get_image(0, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(66, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(132, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(0, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(66, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(132, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(0, 0, 66, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+ 
+        # Set the image the player starts with
+        self.image = self.walking_frames_r[0]
+ 
+        # Set a reference to the image rect.
+        self.rect = self.image.get_rect()
+ 
+    def update(self):
+        """ Move the player. """
+        # Gravity
+        self.calc_grav()
+ 
+        # Move left/right
+        self.rect.x += self.change_x
+        pos = self.rect.x + self.level.world_shift
+        if self.direction == "R":
+            # every 30 frames the animation will change
+            frame = (pos // 40) % len(self.walking_frames_r)
+            self.image = self.walking_frames_r[frame]
+        else:
+            frame = (pos // 40) % len(self.walking_frames_l)
+            self.image = self.walking_frames_l[frame]
+ 
+        # See if we hit anything
+        block_hit_list = pygame.sprite.spritecollide(self, self.level.platform_list, False)
+        for block in block_hit_list:
+            # If we are moving right,
+            # set our right side to the left side of the item we hit
+            if self.change_x > 0:
+                self.rect.right = block.rect.left
+            elif self.change_x < 0:
+                # Otherwise if we are moving left, do the opposite.
+                self.rect.left = block.rect.right
+ 
+        # Move up/down
+        self.rect.y += self.change_y
+ 
+        # Check and see if we hit anything
+        block_hit_list = pygame.sprite.spritecollide(self, self.level.platform_list, False)
+        for block in block_hit_list:
+ 
+            # Reset our position based on the top/bottom of the object.
+            if self.change_y > 0:
+                self.rect.bottom = block.rect.top
+            elif self.change_y < 0:
+                self.rect.top = block.rect.bottom
+ 
+            # Stop our vertical movement
+            self.change_y = 0
+
+            if isinstance(block, MovingPlatform):
+                self.rect.x += block.change_x
+ 
+    def calc_grav(self):
+        """ Calculate effect of gravity. """
+        if self.change_y == 0:
+            self.change_y = 1
+            
+        else:
+            self.change_y += .38
+ 
+        # See if we are on the ground.
+        if self.rect.y >= SCREEN_HEIGHT - self.rect.height and self.change_y >= 0:
+            self.change_y = 0
+            self.rect.y = SCREEN_HEIGHT - self.rect.height
+ 
+    def jump(self):
+        """ Called when user hits 'jump' button. """
+ 
+        # move down a bit and see if there is a platform below us.
+        # Move down 2 pixels because it doesn't work well if we only move down 1
+        # when working with a platform moving down.
+        self.rect.y += 1
+        platform_hit_list = pygame.sprite.spritecollide(self, self.level.platform_list, False)
+        self.rect.y -= 1
+ 
+        # If it is ok to jump, set our speed upwards
+        if len(platform_hit_list) > 0 or self.rect.bottom >= SCREEN_HEIGHT:
+            self.change_y = -10
+ 
+    # Player-controlled movement:
+    def go_left(self):
+        """ Called when the user hits the left arrow. """
+        self.change_x = -6
+        self.direction = "L"
+ 
+    def go_right(self):
+        """ Called when the user hits the right arrow. """
+        self.change_x = 6
+        self.direction = "R"
+        
+    def stop(self):
+        self.change_x = 0
+
+class Enemy(pygame.sprite.Sprite):
+    def __init__(self, x, y, direction):
+        
+        pygame.sprite.Sprite().__init__()
+
+        # Create an image of the block, and fill it with a color.
+        # This could also be an image loaded from the disk.
+        width = 40
+        height = 60
+        self.image = pygame.Surface([width, height])
+ 
+        # Set a referance to the image rect.
+        self.rect = self.image.get_rect()
+ 
+        # Set speed vector of player
+        self.change_x = 0
+        self.change_y = 0
+
+        # This holds all the images for the animated walk left/right
+        # of our player
+        self.walking_frames_l = []
+        self.walking_frames_r = []
+
+        # What direction is the player facing?
+        self.direction = "R"
+
+        # List of sprites we can bump against
+        self.level = None
+
+        sprite_sheet = SpriteSheet("spite.png")
+        # Load all the right facing images into a list
+        image = sprite_sheet.get_image(0, 0, 64, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(66, 0, 64, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(132, 0, 64, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(0, 0, 64, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(66, 0, 64, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(132, 0, 64, 63)
+        self.walking_frames_r.append(image)
+        image = sprite_sheet.get_image(0, 0, 64, 63)
+        self.walking_frames_r.append(image)
+ 
+        # Load all the right facing images, then flip them
+        # to face left.
+        image = sprite_sheet.get_image(0, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(66, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(132, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(0, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(66, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(132, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+        image = sprite_sheet.get_image(0, 0, 64, 63)
+        image = pygame.transform.flip(image, True, False)
+        self.walking_frames_l.append(image)
+
+        # Set the image the player starts with
+        self.image = self.walking_frames_r[0]
+ 
+        # Set a reference to the image rect.
+        self.rect = self.image.get_rect()
+ 
+class Platform(pygame.sprite.Sprite):
+     
+    def __init__(self, width, height):
+        """ Platform constructor. Assumes constructed with user passing in
+            an array of 5 numbers like what's defined at the top of this code.
+            """
+        super().__init__()
+ 
+        self.image = pygame.Surface([width, height])
+        self.image.fill(FOREST)
+ 
+        self.rect = self.image.get_rect()
+
+class MovingPlatform(Platform):
+
+    change_y = 0
+    change_x = 0
+
+    boundary_top = 0
+    boundary_bottom = 0
+    boundary_left = 0
+    boundary_right = 0
+
+    player = None
+    level = None
+
+    def update(self):
+        
+        #Move left/right
+        self.rect.x += self.change_x
+
+        #see if we hit the player
+        hit = pygame.sprite.collide_rect(self, self.player)
+        if hit: 
+            if self.change_x <0:
+                self.player.rect.right = self.rect.left
+            else:
+                self.player.rect.left = self.rect.right
+
+        #move up/down
+        self.rect.y += self.change_y
+
+        hit = pygame.sprite.collide_rect(self, self.player)
+        if hit: 
+            if self.change_x <0:
+                self.player.rect.right = self.rect.top
+            else:
+                self.player.rect.left = self.rect.bottom
+
+        if self.rect.bottom > self.boundary_bottom or self.rect.top < self.boundary_top:
+            self.change_y *= -1
+
+        cur_pos = self.rect.x - self.level.world_shift
+        if cur_pos < self.boundary_left or cur_pos > self.boundary_right:
+            self.change_x *= -1 
+ 
+class Level():
+    """ This is a generic super-class used to define a level.
+        Create a child class for each level with level-specific
+        info. """
+ 
+    def __init__(self, player):
+        """ Constructor. Pass in a handle to player. Needed for when moving
+            platforms collide with the player. """
+        self.platform_list = pygame.sprite.Group()
+        self.enemy_list = pygame.sprite.Group()
+        self.player = player
+ 
+        # How far this world has been scrolled left/right
+        self.world_shift = 0
+ 
+    # Update everythign on this level
+    def update(self):
+        """ Update everything in this level."""
+        self.platform_list.update()
+        self.enemy_list.update()
+ 
+    def draw(self, screen):
+        """ Draw everything on this level. """
+ 
+        # Draw the background
+        screen.blit(BG, (0,0))
+ 
+        # Draw all the sprite lists that we have
+        self.platform_list.draw(screen)
+        self.enemy_list.draw(screen)
+ 
+    def shift_world(self, shift_x):
+        """ When the user moves left/right and we need to scroll
+        everything: """
+ 
+        # Keep track of the shift amount
+        self.world_shift += shift_x
+ 
+        # Go through all the sprite lists and shift
+        for platform in self.platform_list:
+            platform.rect.x += shift_x
+ 
+        for enemy in self.enemy_list:
+            enemy.rect.x += shift_x
+ 
+ 
+# Create platforms for the level
+
+class Level_02(Level):
+    """ Definition for level 1. """
+ 
+    def __init__(self, player):
+        """ Create level 1. """
+ 
+        # Call the parent constructor
+        Level.__init__(self, player)
+ 
+        self.level_limit = -1500
+ 
+        # Array with width, height, x, and y of platform
+        level = [[400, 640, -700, 0], #wall
+                 [4000, 20, -700, 0], #wall
+                 [250, 40, -300, 600], #plat l
+                 [150, 40, -300, 560], # plat m
+                 
+                 [40, 180, 970, 0], #wall t
+                 [190, 40, 150, 500], #plat s
+                 [190, 40, 400, 400], #plat m
+                 [80, 40, 650, 280], #plat s
+                 [210, 40, 800, 180], #plat m
+                 [400, 40, 800, 450], #plat l
+                 [100, 40, 1300, 450], #plat m
+                 [800, 40, 1500, 450], #plat l
+                 
+                 [40, 360, 1600, 0], #wall t
+                 [40, 200, 1700, 570], #wall b
+                 [100, 30, 1800, 330], #plat m
+                 [120, 30, 1900, 190], # plat m 
+                 [40, 450, 1900, 110], #wall t
+                 [40, 360, 2100, 0], #wall t
+                 [180, 30, 2030, 330], #plat m
+                 [100, 30, 2230, 190], #plat m
+                 [40, 400, 2100, 570], #wall t
+                 [40, 590, 2300, 110], #wall b
+                 [400, 40, 2300, 110], #plat m
+                 ]
+
+        # Go through the array above and add platforms
+        for platform in level:
+            block = Platform(platform[0], platform[1])
+            block.rect.x = platform[2]
+            block.rect.y = platform[3]
+            block.player = self.player
+            self.platform_list.add(block)
+
+        # Add a custom moving platform
+        block = MovingPlatform(100, 30)
+        block.rect.x = 1700
+        block.rect.y = 190
+        block.boundary_left = 1640
+        block.boundary_right = 1800
+        block.change_x = 1
+        block.player = self.player
+        block.level = self
+        self.platform_list.add(block)
+
+
+class Level_01(Level):
+    """ Definition for level 1. """
+ 
+    def __init__(self, player):
+        """ Create level 1. """
+ 
+        # Call the parent constructor
+        Level.__init__(self, player)
+ 
+        self.level_limit = -1500
+ 
+        # Array with width, height, x, and y of platform
+        level = [[400, 640, -700, 0], #wall
+                 [4000, 20, -700, 0], #wall
+                 [350, 40, -300, 320], #plat l
+                 [40, 160, -40, 500], #wall b
+                 [400, 40, -400, 500], #plat m
+                 [180, 40, 160, 450], #plat m
+                 [100, 40, 600, 240], # plat s
+                 
+                 [550, 40, 720, 600], #plat l
+                 [450, 40, 760, 560], # plat s
+                 [350, 40, 800, 520], # plat s
+                 [150, 40, 1300, 400], # plat tm
+                 
+                 [190, 40, 300, 280], #plat s
+                 [210, 40, 920, 560], # plat s
+                 
+                 [210, 40, 800, 170], #plat m
+                 [40, 470, 1500, 170], #wall 2
+                 [500, 40, 1500, 170], #plat m
+                  
+                 [500, 40, 1650, 340], #plat l1
+                 [500, 40, 1500, 510], #plat l2
+                 [40, 380, 2100, 0], # wall
+                 ]
+
+        # Go through the array above and add platforms
+        for platform in level:
+            block = Platform(platform[0], platform[1])
+            block.rect.x = platform[2]
+            block.rect.y = platform[3]
+            block.player = self.player
+            self.platform_list.add(block)
+
+        # Add a custom moving platform
+        block = MovingPlatform(70, 40)
+        block.rect.x = 1150
+        block.rect.y = 170
+        block.boundary_left = 1100
+        block.boundary_right = 1350
+        block.change_x = 1
+        block.player = self.player
+        block.level = self
+        self.platform_list.add(block)
+ 
+ 
+# Create platforms for the level
+class Level_03(Level):
+    """ Definition for level 2. """
+ 
+    def __init__(self, player):
+        """ Create level 1. """
+ 
+        # Call the parent constructor
+        Level.__init__(self, player)
+ 
+        self.level_limit = -1400
+ 
+        # Array with type of platform, and x, y location of the platform.
+        level = [[400, 640, -700, 0], #wall 1
+                 [4000, 20, -700, 0], #wall 2
+                 [50, 100, 280, 550], # wall 
+                 [210, 40, -300, 190], # plat m
+                 [50, 40, 90, 220],  #plat s
+                 [100, 40, 350, 250], # plat m
+                 [100, 40, 930, 320], #plat m
+                 [300, 40, 500, 420], #plat m
+                 [40, 600, 1350, 160] #wall
+                 ]
+ 
+        # Go through the array above and add platforms
+        for platform in level:
+            block = Platform(platform[0], platform[1])
+            block.rect.x = platform[2]
+            block.rect.y = platform[3]
+            block.player = self.player
+            self.platform_list.add(block)
+
+        # Add a custom moving platform
+        block = MovingPlatform(200, 40)
+        block.rect.x = 1120
+        block.rect.y = 300
+        block.boundary_top = 80
+        block.boundary_bottom = 340
+        block.change_y = -1
+        block.player = self.player
+        block.level = self
+        self.platform_list.add(block)
+
+def items():
+    
+    player_x = 300
+    player_y = 0
+    player_width = 66
+    player_height = 63
+    
+    # scrolling through the image to animate the coin.
+    coin_image = pygame.image.load("items/coins/coin1_0.png")
+    coin_animation = engine.Animation([
+            load("items/coins/coin_0.png"),
+            load("items/coins/coin_1.png"),
+            load("items/coins/coin_2.png"),
+            load("items/coins/coin_3.png"),
+            load("items/coins/coin_4.png"),
+            load("items/coins/coin_5.png"),
+            load("items/coins/coin_6.png"),
+            load("items/coins/coin_7.png")])
+    
+    #creating the coins
+    coins = [
+            pygame.Rect((600,460),(39,18)),
+            pygame.Rect((170,460),(39,18))]
+
+    for c in items.coins:
+        coin_animation.draw(screen, c.x, c.y, False, False)
+
+    #see if any coins have been collected
+    player_rect = pygame.Rect(player_x, player_y, player_width, player_height)
+    for c in coins:
+        if c.colliderect(player_rect):
+            coins.remove(c)
+            score += 1
+            if score>= 4:
+                game_state = 'win'
+
+    #displaying the coin image 
+    screen.blit(coin_image,(20, 50))
+
+    heart_image = load("items/heart.png")
+    lives = 5
+
+    #lives
+    for l in range(lives):
+        screen.blit(heart_image, (20 + (l*50),5))
+
+    #Update the coin animation
+    coin_animation.update()
+ 
+def main():
+    """ Main Program """
+    pygame.init()
+ 
+    # Set the height and width of the screen
+    size = [SCREEN_WIDTH, SCREEN_HEIGHT]
+    screen = pygame.display.set_mode(size)
+ 
+    pygame.display.set_caption("Totoro's Adventure")
+
+    score = 0
+ 
+    # Create the player
+    player = Player()
+
+    #Create enemies 
+    enemies = []
+
+    #displaying the score
+    score_TEXT = get_font1(25).render(str(score), True, "green")
+    score_RECT = score_TEXT.get_rect(center=(60, 52))
+    screen.blit(score_TEXT, score_RECT)    
+    
+    # Create all the levels
+    level_list = []
+    level_list.append(Level_01(player))
+    level_list.append(Level_02(player))
+    level_list.append(Level_03(player))
+ 
+    # Set the current level
+    current_level_no = 0
+    current_level = level_list[current_level_no]
+ 
+    active_sprite_list = pygame.sprite.Group()
+    player.level = current_level
+ 
+    player.rect.x = 0
+    player.rect.y = SCREEN_HEIGHT - player.rect.height
+    active_sprite_list.add(player)
+ 
+    # Loop until the user clicks the close button.
+    done = False
+ 
+    # Used to manage how fast the screen updates
+    clock = pygame.time.Clock()
+ 
+    # -------- Main Program Loop -----------
+    while not done:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                done = True
+ 
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_a:
+                    player.go_left()
+                if event.key == pygame.K_d:
+                    player.go_right()
+                if event.key == pygame.K_w:
+                    player.jump()
+ 
+            if event.type == pygame.KEYUP:
+                if event.key == pygame.K_a and player.change_x < 0:
+                    player.stop()
+                if event.key == pygame.K_d and player.change_x > 0:
+                    player.stop()
+ 
+        # Update the player.
+        active_sprite_list.update()
+
+        
+ 
+        # Update items in the level
+        current_level.update()
+ 
+        # If the player gets near the right side, shift the world left (-x)
+        if player.rect.right >= 500:
+            diff = player.rect.right - 500
+            player.rect.right = 500
+            current_level.shift_world(-diff)
+ 
+        # If the player gets near the left side, shift the world right (+x)
+        if player.rect.left <= 400:
+            diff = 400 - player.rect.left
+            player.rect.left = 400
+            current_level.shift_world(diff)
+ 
+        # If the player gets to the end of the level, go to the next level
+        current_position = player.rect.x + current_level.world_shift
+        if current_position < current_level.level_limit:
+            player.rect.x = 50
+            if current_level_no < len(level_list)-1:
+                current_level_no += 1
+                current_level = level_list[current_level_no]
+                player.level = current_level
+ 
+        # ALL CODE TO DRAW SHOULD GO BELOW THIS COMMENT
+        current_level.draw(screen)
+        active_sprite_list.draw(screen)
+ 
+        # Limit to 60 frames per second
+        clock.tick(60)
+ 
+        # Go ahead and update the screen with what we've drawn.
+        pygame.display.flip()
+ 
+    pygame.quit()
+ 
+if __name__ == "__main__":
+    main()
+    
